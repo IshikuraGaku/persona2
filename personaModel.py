@@ -39,13 +39,19 @@ class Encoder(chainer.Chain):
         c_backward = chainer.Variable(self.xp.zeros((batch_num, hidden_num), dtype=np.float32))
         for word in ex:
             c_forward, h_forward = self.lstm_forward1(c_forward, h_forward, word) #入力c, hがいる
+            h_forward = F.dropout(h_forward, raito=.2)
             c_forward, h_forward = self.lstm_forward2(c_forward, h_forward, word)
+            h_forward = F.dropout(h_forward, raito=.2)
             c_forward, h_forward = self.lstm_forward3(c_forward, h_forward, word)
+            h_forward = F.dropout(h_forward, raito=.2)
             c_forward, h_forward = self.lstm_forward4(c_forward, h_forward, word)
         for word in reversed(ex):
             c_backward, h_backward = self.lstm_backward1(c_backward, h_backward, word)
+            h_backward = F.dropout(h_backward, raito=.2)
             c_backward, h_backward = self.lstm_backward2(c_backward, h_backward, word)
+            h_backward = F.dropout(h_backward, raito=.2)
             c_backward, h_backward = self.lstm_backward3(c_backward, h_backward, word)
+            h_backward = F.dropout(h_backward, raito=.2)
             c_backward, h_backward = self.lstm_backward4(c_backward, h_backward, word)
         h = F.concat((h_forward, h_backward))
         c = F.concat((c_forward, c_backward))
@@ -82,8 +88,11 @@ class Decoder(chainer.Chain):
             #yiとpyの形が同じはず
             for yi in y:            
                 c_new, h_new = self.lstmD1(c_old, h_old, firstEOS)
+                h_new = F.dropout(h_new, raito=0.2)
                 c_new, h_new = self.lstmD2(c_new, h_new, firstEOS)
+                h_new = F.dropout(h_new, raito=0.2)
                 c_new, h_new = self.lstmD3(c_new, h_new, firstEOS)
+                h_new = F.dropout(h_new, raito=0.2)
                 c_new, h_new = self.lstmD4(c_new, h_new, firstEOS)
                 py = self.lineD(h_new)#n_hidden => n_vocab
                 #不安おそらくバッチ１ワードずつなはず？
@@ -97,8 +106,11 @@ class Decoder(chainer.Chain):
         else:
             for _ in range(max_len):            
                 c_new, h_new = self.lstmD1(c_old, h_old, firstEOS)
+                h_new = F.dropout(h_new, raito=0.2)
                 c_new, h_new = self.lstmD2(c_new, h_new, firstEOS)
+                h_new = F.dropout(h_new, raito=0.2)
                 c_new, h_new = self.lstmD3(c_new, h_new, firstEOS)
+                h_new = F.dropout(h_new, raito=0.2)
                 c_new, h_new = self.lstmD4(c_new, h_new, firstEOS)
                 py = self.lineD(h_new)#n_hidden => n_vocab lineD.b.gradは全部０
                 #不安おそらくバッチ１ワードずつなはず？
@@ -181,6 +193,7 @@ class Model(chainer.Chain):
         #context
         c = self.lineCED(c)
         h = self.lineHED(h)
+        h = F.dropout(h, raito=.2)
         #h = self.con(h)
         #decode
         #デコーダーの一番目にぶち込むやつ
@@ -199,26 +212,27 @@ class Model(chainer.Chain):
         #出力は
         #peyはlist (1)intであってほしかった
         #batchで入ってくることもある
-        predictBatch = np.shape(ex)[0]
-        ex = self.emb(ex.T)
-        if np.shape(pey) == ():
-            pey = self.xp.reshape(self.xp.asarray(pey), (1))
-        else:
-            pey = self.xp.asarray(pey, dtype=self.xp.int32)
-        pey = self.personaEmb(pey) #listで入ってくるとだめ
-        #pey = self.personaEmbed(pey)#peyが(1,)やないとあかん？
-        #encode
-        c, h = self.enc(ex)
-        #context
-        c = self.lineCED(c)
-        h = self.lineHED(h)
-        #h = self.con(h)
-        #decode
-        firstEOS = self.xp.ones(predictBatch, dtype=self.xp.int32)
-        firstEOS = self.emb(firstEOS)
-        result = self.dec.predict(firstEOS, pey, c, h)
+        with chainer.using_config('train', False):
+            predictBatch = np.shape(ex)[0]
+            ex = self.emb(ex.T)
+            if np.shape(pey) == ():
+                pey = self.xp.reshape(self.xp.asarray(pey), (1))
+            else:
+                pey = self.xp.asarray(pey, dtype=self.xp.int32)
+            pey = self.personaEmb(pey) #listで入ってくるとだめ
+            #pey = self.personaEmbed(pey)#peyが(1,)やないとあかん？
+            #encode
+            c, h = self.enc(ex)
+            #context
+            c = self.lineCED(c)
+            h = self.lineHED(h)
+            #h = self.con(h)
+            #decode
+            firstEOS = self.xp.ones(predictBatch, dtype=self.xp.int32)
+            firstEOS = self.emb(firstEOS)
+            result = self.dec.predict(firstEOS, pey, c, h)
 
-        result = self.xp.asarray(result, dtype=self.xp.int32).T
+            result = self.xp.asarray(result, dtype=self.xp.int32).T
         return result
 
 
