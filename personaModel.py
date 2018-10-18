@@ -13,6 +13,8 @@ from chainer import Variable
 from chainer.backends import cuda
 import numpy as np
 
+drop_rate = 0.3
+
 class Encoder(chainer.Chain):
     def __init__(self, n_hidden):
         super(Encoder, self).__init__()
@@ -39,19 +41,19 @@ class Encoder(chainer.Chain):
         c_backward = chainer.Variable(self.xp.zeros((batch_num, hidden_num), dtype=np.float32))
         for word in ex:
             c_forward, h_forward = self.lstm_forward1(c_forward, h_forward, word) #入力c, hがいる
-            h_forward = F.dropout(h_forward, raito=.2)
+            h_forward = F.dropout(h_forward, raito=drop_rate)
             c_forward, h_forward = self.lstm_forward2(c_forward, h_forward, word)
-            h_forward = F.dropout(h_forward, raito=.2)
+            h_forward = F.dropout(h_forward, raito=drop_rate)
             c_forward, h_forward = self.lstm_forward3(c_forward, h_forward, word)
-            h_forward = F.dropout(h_forward, raito=.2)
+            h_forward = F.dropout(h_forward, raito=drop_rate)
             c_forward, h_forward = self.lstm_forward4(c_forward, h_forward, word)
         for word in reversed(ex):
             c_backward, h_backward = self.lstm_backward1(c_backward, h_backward, word)
-            h_backward = F.dropout(h_backward, raito=.2)
+            h_backward = F.dropout(h_backward, raito=drop_rate)
             c_backward, h_backward = self.lstm_backward2(c_backward, h_backward, word)
-            h_backward = F.dropout(h_backward, raito=.2)
+            h_backward = F.dropout(h_backward, raito=drop_rate)
             c_backward, h_backward = self.lstm_backward3(c_backward, h_backward, word)
-            h_backward = F.dropout(h_backward, raito=.2)
+            h_backward = F.dropout(h_backward, raito=drop_rate)
             c_backward, h_backward = self.lstm_backward4(c_backward, h_backward, word)
         h = F.concat((h_forward, h_backward))
         c = F.concat((c_forward, c_backward))
@@ -88,11 +90,11 @@ class Decoder(chainer.Chain):
             #yiとpyの形が同じはず
             for yi in y:            
                 c_new, h_new = self.lstmD1(c_old, h_old, firstEOS)
-                h_new = F.dropout(h_new, raito=0.2)
+                h_new = F.dropout(h_new, raito=drop_rate)
                 c_new, h_new = self.lstmD2(c_new, h_new, firstEOS)
-                h_new = F.dropout(h_new, raito=0.2)
+                h_new = F.dropout(h_new, raito=drop_rate)
                 c_new, h_new = self.lstmD3(c_new, h_new, firstEOS)
-                h_new = F.dropout(h_new, raito=0.2)
+                h_new = F.dropout(h_new, raito=drop_rate)
                 c_new, h_new = self.lstmD4(c_new, h_new, firstEOS)
                 py = self.lineD(h_new)#n_hidden => n_vocab
                 #不安おそらくバッチ１ワードずつなはず？
@@ -106,11 +108,11 @@ class Decoder(chainer.Chain):
         else:
             for _ in range(max_len):            
                 c_new, h_new = self.lstmD1(c_old, h_old, firstEOS)
-                h_new = F.dropout(h_new, raito=0.2)
+                h_new = F.dropout(h_new, raito=drop_rate)
                 c_new, h_new = self.lstmD2(c_new, h_new, firstEOS)
-                h_new = F.dropout(h_new, raito=0.2)
+                h_new = F.dropout(h_new, raito=drop_rate)
                 c_new, h_new = self.lstmD3(c_new, h_new, firstEOS)
-                h_new = F.dropout(h_new, raito=0.2)
+                h_new = F.dropout(h_new, raito=drop_rate)
                 c_new, h_new = self.lstmD4(c_new, h_new, firstEOS)
                 py = self.lineD(h_new)#n_hidden => n_vocab lineD.b.gradは全部０
                 #不安おそらくバッチ１ワードずつなはず？
