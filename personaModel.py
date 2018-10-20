@@ -35,28 +35,32 @@ class Encoder(chainer.Chain):
         #ex = (50, 64, 100) Variable
         batch_num = np.shape(ex)[1]
         hidden_num = np.shape(ex)[2]
-        h_forward = chainer.Variable(self.xp.zeros((batch_num, hidden_num), dtype=np.float32))
-        c_forward = chainer.Variable(self.xp.zeros((batch_num, hidden_num), dtype=np.float32))
-        h_backward = chainer.Variable(self.xp.zeros((batch_num, hidden_num), dtype=np.float32))
-        c_backward = chainer.Variable(self.xp.zeros((batch_num, hidden_num), dtype=np.float32))
-        for word in ex:
-            c_forward, h_forward = self.lstm_forward1(c_forward, h_forward, word) #入力c, hがいる
-            h_forward = F.dropout(h_forward, raito=drop_rate)
-            c_forward, h_forward = self.lstm_forward2(c_forward, h_forward, word)
-            h_forward = F.dropout(h_forward, raito=drop_rate)
-            c_forward, h_forward = self.lstm_forward3(c_forward, h_forward, word)
-            h_forward = F.dropout(h_forward, raito=drop_rate)
-            c_forward, h_forward = self.lstm_forward4(c_forward, h_forward, word)
-        for word in reversed(ex):
-            c_backward, h_backward = self.lstm_backward1(c_backward, h_backward, word)
-            h_backward = F.dropout(h_backward, raito=drop_rate)
-            c_backward, h_backward = self.lstm_backward2(c_backward, h_backward, word)
-            h_backward = F.dropout(h_backward, raito=drop_rate)
-            c_backward, h_backward = self.lstm_backward3(c_backward, h_backward, word)
-            h_backward = F.dropout(h_backward, raito=drop_rate)
-            c_backward, h_backward = self.lstm_backward4(c_backward, h_backward, word)
-        h = F.concat((h_forward, h_backward))
-        c = F.concat((c_forward, c_backward))
+        h = chainer.Variable(self.xp.zeros((batch_num, hidden_num), dtype=np.float32))
+        c = chainer.Variable(self.xp.zeros((batch_num, hidden_num), dtype=np.float32))
+        for f_word, b_word in zip(ex, reversed(ex)):
+            c_forward, h_forward = self.lstm_forward1(c, h, f_word) #入力c, hがいる
+            c_backward, h_backward = self.lstm_backward1(c, h, b_word)
+            c = c_forward / 2 + c_backward / 2
+            h = h_forward / 2 + h_backward / 2
+            #h = F.dropout(h, ratio=drop_rate)
+
+            c_forward, h_forward = self.lstm_forward2(c, h, f_word) #入力c, hがいる
+            c_backward, h_backward = self.lstm_backward2(c, h, b_word)
+            c = c_forward / 2 + c_backward / 2
+            h = h_forward / 2 + h_backward / 2
+            #h = F.dropout(h, ratio=drop_rate)
+
+            c_forward, h_forward = self.lstm_forward3(c, h, f_word) #入力c, hがいる
+            c_backward, h_backward = self.lstm_backward3(c, h, b_word)
+            c = c_forward / 2 + c_backward / 2
+            h = h_forward / 2 + h_backward / 2
+            #h = F.dropout(h, ratio=drop_rate)
+
+            c_forward, h_forward = self.lstm_forward4(c, h, f_word) #入力c, hがいる
+            c_backward, h_backward = self.lstm_backward4(c, h, b_word)
+            c = c_forward / 2 + c_backward / 2
+            h = h_forward / 2 + h_backward / 2
+            #h = F.dropout(h, ratio=drop_rate)
         return c, h
 
  
@@ -73,7 +77,6 @@ class Decoder(chainer.Chain):
             self.lineD = L.Linear(n_hidden, n_vocab)
         self.n_hidden = n_hidden
         self.embed = embed
-        self.decoderCount = 0 
 
     def __call__(self, firstEOS, y, pey, c_input, h_input):
         #this function is called in training 
@@ -82,49 +85,28 @@ class Decoder(chainer.Chain):
         c_old = c_input
         h_old = h_input
         max_len, batch = np.shape(y)
-        firstEOS = F.concat((firstEOS, pey), axis=1)#あってるか？
+        firstEOS = F.concat((firstEOS, pey), axis=1)#あってるか？peyが(batch,1,n_hidden)か？
         #print(firstEOS)いけそう？
         #batch = np.shape(y)[1]
         #yはint?
-        if self.decoderCount <= 100000: #安定するまで正解データを突っ込む
-            #yiとpyの形が同じはず
-            for yi in y:            
-                c_new, h_new = self.lstmD1(c_old, h_old, firstEOS)
-                h_new = F.dropout(h_new, raito=drop_rate)
-                c_new, h_new = self.lstmD2(c_new, h_new, firstEOS)
-                h_new = F.dropout(h_new, raito=drop_rate)
-                c_new, h_new = self.lstmD3(c_new, h_new, firstEOS)
-                h_new = F.dropout(h_new, raito=drop_rate)
-                c_new, h_new = self.lstmD4(c_new, h_new, firstEOS)
-                py = self.lineD(h_new)#n_hidden => n_vocab
-                #不安おそらくバッチ１ワードずつなはず？
-                #yi = xp.array(y[i], dtype=xp.int32)
-                loss += F.sum(F.softmax_cross_entropy(py, yi, reduce='no', ignore_label=-1))#intしか無理これはいるreduceはbatchsizeこlossが出る
-                firstEOS = loadData.LoadData.sequence_embed(self.embed, yi.data)#memory削減
-                firstEOS = F.concat((firstEOS, pey), axis=1)
-                c_old = c_new
-                h_old = c_new
-            self.decoderCount += 1
-        else:
-            for _ in range(max_len):            
-                c_new, h_new = self.lstmD1(c_old, h_old, firstEOS)
-                h_new = F.dropout(h_new, raito=drop_rate)
-                c_new, h_new = self.lstmD2(c_new, h_new, firstEOS)
-                h_new = F.dropout(h_new, raito=drop_rate)
-                c_new, h_new = self.lstmD3(c_new, h_new, firstEOS)
-                h_new = F.dropout(h_new, raito=drop_rate)
-                c_new, h_new = self.lstmD4(c_new, h_new, firstEOS)
-                py = self.lineD(h_new)#n_hidden => n_vocab lineD.b.gradは全部０
-                #不安おそらくバッチ１ワードずつなはず？
-                pyid = self.xp.argmax(py.data, axis=1).astype(self.xp.int32)
-                firstEOS = loadData.LoadData.sequence_embed(self.embed, pyid)
-                firstEOS = F.concat((firstEOS, pey), axis=1)
-                #y[i] = self.xp.array(y[i], dtype=self.xp.int32)
-                #print(pyid)
-                loss += F.sum(F.softmax_cross_entropy(py, pyid, reduce='no', ignore_label=-1))#intしか無理
-                c_old = c_new
-                h_old = c_new
-        #lossは大きい方がいいかもloss/max_len => loss　
+        #yiとpyの形が同じはず
+        for yi in y:            
+            c_new, h_new = self.lstmD1(c_old, h_old, firstEOS)
+            #h_new = F.dropout(h_new, ratio=drop_rate)
+            c_new, h_new = self.lstmD2(c_new, h_new, firstEOS)
+            #h_new = F.dropout(h_new, ratio=drop_rate)
+            c_new, h_new = self.lstmD3(c_new, h_new, firstEOS)
+            #h_new = F.dropout(h_new, ratio=drop_rate)
+            c_new, h_new = self.lstmD4(c_new, h_new, firstEOS)
+            py = self.lineD(h_new)#n_hidden => n_vocab
+            #不安おそらくバッチ１ワードずつなはず？
+            #yi = xp.array(y[i], dtype=xp.int32)
+            loss += F.sum(F.softmax_cross_entropy(py, yi, reduce='no', ignore_label=-1))#intしか無理これはいるreduceはbatchsizeこlossが出る
+            firstEOS = loadData.LoadData.sequence_embed(self.embed, yi.data)#memory削減
+            firstEOS = F.concat((firstEOS, pey), axis=1)
+            c_old = c_new
+            h_old = c_new
+            #print(loss) Nan
         return loss/batch
 
 
@@ -148,20 +130,6 @@ class Decoder(chainer.Chain):
             c_old = c_new
             h_old = c_new
         return output_word
-            
-
-class Context(chainer.Chain):
-    def __init__(self, n_hidden):
-        super(Context, self).__init__()
-        with self.init_scope():
-            self.lstmC = L.LSTM(None, n_hidden)
-
-    def __call__(self, h):
-        h = self.lstmC(h)
-        return h
-
-    def reset_state(self):
-        self.lstmC.reset_state()
         
 
 class Model(chainer.Chain):
@@ -170,11 +138,10 @@ class Model(chainer.Chain):
         with self.init_scope():
             self.emb = L.EmbedID(len(loadData.LoadData.vocabulary), n_hidden, ignore_label=-1)
             self.personaEmb = L.EmbedID(len(loadData.LoadData.peVocabulary), n_hidden, ignore_label=-1)
-            self.lineCED = L.Linear(n_hidden*2, n_hidden)
-            self.lineHED = L.Linear(n_hidden*2, n_hidden)
+            #self.lineCED = L.Linear(n_hidden*2, n_hidden)
+            #self.lineHED = L.Linear(n_hidden*2, n_hidden)
             self.enc = Encoder(n_hidden)
             self.dec = Decoder(len(loadData.LoadData.vocabulary), n_hidden, self.emb)
-            self.con = Context(n_hidden)
 
         self.n_hidden = n_hidden
         self.batch = batch
@@ -193,9 +160,9 @@ class Model(chainer.Chain):
         #encode
         c, h = self.enc(ex)
         #context
-        c = self.lineCED(c)
-        h = self.lineHED(h)
-        h = F.dropout(h, raito=.2)
+        #c = self.lineCED(c)
+        #h = self.lineHED(h)
+        #h = F.dropout(h, ratio=.2)
         #h = self.con(h)
         #decode
         #デコーダーの一番目にぶち込むやつ
@@ -214,7 +181,7 @@ class Model(chainer.Chain):
         #出力は
         #peyはlist (1)intであってほしかった
         #batchで入ってくることもある
-        with chainer.using_config('train', False):
+        with chainer.using_config('train', False), chainer.no_backprop_mode():
             predictBatch = np.shape(ex)[0]
             ex = self.emb(ex.T)
             if np.shape(pey) == ():
@@ -226,8 +193,8 @@ class Model(chainer.Chain):
             #encode
             c, h = self.enc(ex)
             #context
-            c = self.lineCED(c)
-            h = self.lineHED(h)
+            #c = self.lineCED(c)
+            #h = self.lineHED(h)
             #h = self.con(h)
             #decode
             firstEOS = self.xp.ones(predictBatch, dtype=self.xp.int32)
